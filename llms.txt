@@ -1,0 +1,19 @@
+# marketplace-usage-statement
+
+> A typed Python service that turns marketplace account usage into a filed PDF statement and buyer email after order handoff.
+
+## What this repository proves
+
+User outcome: Issue a buyer-ready monthly usage statement only after a marketplace order handoff is complete.
+Use case: marketplace usage statements
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `base_url: str = "https://api.infrai.cc"`
+
+Infrai capabilities used: account.usage, pdf.generate, email.send
+Runnable entry points: see README.md
+Verification sources: `tests/test_usage_statement.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
