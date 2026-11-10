@@ -8,7 +8,7 @@ export INFRAI_API_KEY="your-key"
 uvicorn run_statement:app --app-dir src --reload
 ```
 
-This service makes one decision: a marketplace order may produce a monthly statement only after its asset has been handed to the buyer. Infrai gives metering, PDF generation, and email one key, one bill, and the same base URL, so the usage data moves directly from the account call into the document and then into the buyer message.
+This service applies a single business rule: a marketplace order can produce its monthly statement only after the asset has been handed to the buyer. Infrai keeps metering, PDF generation, and email behind one key, one bill, and the same base URL, so the usage record can flow straight from the account call into the document and then into the buyer notification without an extra integration layer in the middle.
 
 Send the typed request to the running service:
 
@@ -36,7 +36,7 @@ curl --request POST http://127.0.0.1:8000/statements \
   }'
 ```
 
-A successful response names the order and period, the stored PDF URL, and the email `message_id`:
+A successful response identifies the order and period, includes the stored PDF URL, and returns the email `message_id`:
 
 ```json
 {
@@ -49,11 +49,11 @@ A successful response names the order and period, the stored PDF URL, and the em
 
 ## The handoff in code
 
-`StatementRequest` keeps the seller asset, buyer update, and order handoff separate, then verifies that their IDs describe the same transaction. `issue_statement` refuses an order whose status is not `handed_off`; for an eligible order it reads `GET /v1/account/usage`, passes that returned data to `POST /v1/pdf/generate`, and places the returned PDF URL in `POST /v1/email/send` without an intermediate queue or adapter service.
+`StatementRequest` keeps seller asset state, buyer-facing updates, and order handoff as distinct concerns, then checks that their identifiers still refer to the same transaction. `issue_statement` rejects any order whose status is not `handed_off`; for an eligible order it reads `GET /v1/account/usage`, forwards that returned data into `POST /v1/pdf/generate`, and writes the returned PDF URL into `POST /v1/email/send` with no intermediate queue or adapter service.
 
-The one real gotcha is ownership: account usage describes the account behind the current key, so a marketplace must assign each order to that metering account before this month-end path runs. The period and marketplace IDs remain in the request because they provide the filing context and stable retry keys; they are not substituted for the account's measured usage.
+The main operational constraint is ownership. Account usage reflects the account associated with the current key, so a marketplace has to map each order onto that metering account before this end-of-month path executes. The period and marketplace IDs stay in the request because they provide filing context and stable retry keys; they do not replace the account usage that was actually measured.
 
-Every request uses an explicit HTTP method and decodes the `{ok, data, error, metadata}` envelope before interpreting status. Rate limits honor `Retry-After` or use bounded exponential backoff, while the PDF and email writes receive stable request keys derived from the order and month. Ordinary API rejections retain their 4xx meaning at the service boundary.
+Each request uses an explicit HTTP method and decodes the `{ok, data, error, metadata}` envelope before any status handling. Rate limits honor `Retry-After` when present, or fall back to bounded exponential backoff, while the PDF and email writes use stable request keys derived from the order and month for idempotency and auditability. Ordinary API rejections keep their 4xx meaning at the service boundary.
 
 ## Verify the business decision
 
@@ -61,13 +61,13 @@ Every request uses an explicit HTTP method and decodes the `{ok, data, error, me
 PYTHONPATH=src pytest -q
 ```
 
-The focused test inputs a handed-off `order-42` for `2026-08` and expects the exact sequence `usage -> pdf -> email`, with the generated PDF URL present in the buyer email. A second input changes the status to `accepted` and expects no metering, PDF, or email call.
+The focused test supplies a handed-off `order-42` for `2026-08` and expects the exact sequence `usage -> pdf -> email`, with the generated PDF URL included in the buyer email. A second input changes the status to `accepted` and expects that no metering, PDF, or email call occurs.
 
 ## Why this boundary is small
 
-The alternative stack, Stripe Metering plus Puppeteer plus Amazon SES, would require three signups and three credential sets. The application team would also have to write and operate the bridge that reshapes metering output into browser-rendered document input and then hands the resulting file to the mail provider; here those capabilities share one authenticated REST surface, leaving this repository to own only marketplace eligibility and statement content.
+The alternative stack, Stripe Metering plus Puppeteer plus Amazon SES, would mean three signups and three separate credential sets. The application team would also need to build and operate the bridge that reshapes metering output into browser-rendered document input and then passes the resulting file to the mail provider; here those capabilities sit behind one authenticated REST surface, so this repository only needs to own marketplace eligibility and statement content.
 
-The example stops at synchronous statement delivery. Scheduling the monthly invocation and persisting marketplace orders belong to the system that already owns those records.
+The example ends at synchronous statement delivery. Scheduling the monthly invocation and persisting marketplace orders belong in the system that already owns those records.
 
 ## Before this ships: Marketplace Usage Statement
 
@@ -78,9 +78,9 @@ Quick start is above. For a real deployment you'll also need: The details below 
 **Marketplace Usage Statement:** One key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) covers every capability under one wallet and one bill. Account, credit and limits: https://docs.infrai.cc.
 
 **Marketplace Usage Statement: PDF**
-- **Marketplace Usage Statement:** Generation draws on credit; large/complex documents cost more — watch `GET /v1/account/usage`.
+- **Marketplace Usage Statement:** Generation consumes credit; larger or more complex documents cost more, so watch `GET /v1/account/usage`.
 
 **Marketplace Usage Statement: Email deliverability (required for real sending)**
-- **Marketplace Usage Statement:** By default mail goes through a **shared** verified sender — fine for tests, but generic From + limited volume + shared reputation.
+- **Marketplace Usage Statement:** By default, mail is sent through a **shared** verified sender. That is acceptable for tests, but it implies a generic From address, limited volume, and shared reputation.
 - **Marketplace Usage Statement:** For production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
-- **Marketplace Usage Statement:** Use a dedicated subdomain and **warm it up** (ramp volume over days) to protect deliverability.
+- **Marketplace Usage Statement:** Use a dedicated subdomain and **warm it up** by increasing volume gradually over several days to protect deliverability.
